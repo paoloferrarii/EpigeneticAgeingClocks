@@ -1,0 +1,13 @@
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+scipy
+anndata
+torch
+pyaging>=0.6.2
+inmoose
+statsmodels
+requests
+urllib3

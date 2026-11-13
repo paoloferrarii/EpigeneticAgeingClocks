@@ -1,0 +1,13 @@
+# Notebook / editor junk
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Local shell config (not part of the project)
+.bashrc
+
+# Large local data (GitHub file limit is 100MB)
+02_pyaging/pyaging_data/*.pkl
+data/
+results/
