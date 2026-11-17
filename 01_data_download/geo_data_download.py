@@ -304,7 +304,7 @@ def find_supplementary_beta(gse):
         f"{selected['filename']}"
     )
 
-    return selected
+    return selected["filename"], selected["url"]
 
 def download_supplementary_beta(gse: str, directory: Path) -> Path:
     """Find and download supplementary beta values."""
