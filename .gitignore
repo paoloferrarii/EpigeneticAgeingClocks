@@ -11,3 +11,4 @@ __pycache__/
 02_pyaging/pyaging_data/*.pkl
 data/
 results/
+logs/
