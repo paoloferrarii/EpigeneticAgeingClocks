@@ -35,36 +35,48 @@ squeue -u "$USER"
 
 ```bash
 python 01_data_download/select_datasets.py --force-refresh
-python 01_data_download/geo_data_download.py --selected-only
+python 01_data_download/geo_data_download.py --selected-only --require-age
 ```
 
-## Jupyter (compute node, not login)
+## Jupyter via VS Code Remote (worked on Izar)
 
-`build` QoS ≈ **1 job/user**. If `sbatch` is already running, `Sinteract -q build` fails with `QOSMaxSubmitJobPerUserLimit` — wait, `scancel <JOBID>`, or use `debug`:
+Jupyter runs on the **compute node**. VS Code Remote stays on the **login** node only to forward the port. Do not run kernels on `izar1`.
 
-```bash
-Sinteract -p gpu -q debug -g gpu:1 -c 4 -m 16G -t 01:00:00
-# or, when no other build job: Sinteract -p gpu -q build -c 4 -m 16G -t 02:00:00
-```
+`build` ≈ **1 job/user**. If a download `sbatch` is running, wait / `scancel` / use `debug` before `Sinteract -q build`.
 
-On the compute host (not `izar1`):
+### Terminal A — compute (prompt like `USER@i31`, not `izar1`)
 
 ```bash
+Sinteract -p gpu -q build -c 4 -m 16G -t 02:00:00
 cd /work/scitas-share/FellayMultiOmic/CS433/ML4Science_Barry
 conda activate MLproject1
-hostname   # e.g. i31
 jupyter lab --no-browser --ip=127.0.0.1 --port=8888
 ```
 
-Laptop tunnel (replace `USER` / `i31`):
+Copy the `token=...` from the log. Leave this running.
+
+### Terminal B — login (`izar1`)
+
+Replace `i31` with your `hostname` from Terminal A. Bind **IPv4** only (plain `-L 1889:...` can fail with `bind [::1]: Cannot assign requested address`):
 
 ```bash
-ssh -N -L 8888:127.0.0.1:8888 USER@i31 -J USER@izar.hpc.epfl.ch
+ssh -N -L 127.0.0.1:1889:127.0.0.1:8888 i31
 ```
 
-Browser: `http://127.0.0.1:8888/lab?token=...` → open `01_data_download/normalise_data_candidates.ipynb`.
+Leave this running (no prompt = OK).
+
+### VS Code Ports → browser
+
+1. **View → Ports** → **Forward a Port** → `1889`
+2. Open in Browser:  
+   `http://127.0.0.1:1889/lab?token=<paste-token>`
+3. Open `01_data_download/normalise_data_candidates.ipynb`
+
+Optional check on `izar1`: `curl -I --max-time 3 http://127.0.0.1:1889/lab`
+
+Avoid forwarding **8888/8899** on the laptop (Cursor often owns them). `1889` is fine.
 
 Jed/Kuma interactive flags: [jed.md](docs/scitas/jed.md) · [kuma.md](docs/scitas/kuma.md).
 
 Config: `shared/paths.py` · Cache: `data/selection/selection_cache.json`  
-Overview: n>100, clinical outcome, 450K/EPIC. Beta checked at download.
+Overview: n>100, clinical outcome, 450K/EPIC, prefer age (`--require-age`). Beta checked at download.

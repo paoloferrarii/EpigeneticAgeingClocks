@@ -26,18 +26,18 @@ Script uses: `--partition=gpu --qos=build`
 sbatch --partition=gpu --qos=normal --gres=gpu:1 --time=04:00:00 your_gpu_job.sbatch
 ```
 
-## Interactive / Jupyter
+## Interactive / Jupyter (VS Code Remote — verified)
 
-`build` ≈ 1 job/user. If a download `sbatch` is running, interactive `-q build` hits `QOSMaxSubmitJobPerUserLimit` — wait, `scancel`, or use `debug`:
+`build` ≈ 1 job/user. If download is running: wait / `scancel` / `debug`.
 
-```bash
-Sinteract -p gpu -q debug -g gpu:1 -c 4 -m 16G -t 01:00:00
-# or when free: Sinteract -p gpu -q build -c 4 -m 16G -t 02:00:00
-```
+1. **Compute:** `Sinteract -p gpu -q build -c 4 -m 16G -t 02:00:00` then  
+   `jupyter lab --no-browser --ip=127.0.0.1 --port=8888`
+2. **Login (`izar1`):** `ssh -N -L 127.0.0.1:1889:127.0.0.1:8888 <node>`  
+   (IPv4 bind required; replace `<node>` e.g. `i31`)
+3. **VS Code → Ports** → forward `1889` → open  
+   `http://127.0.0.1:1889/lab?token=...`
 
-Then on the compute host: `jupyter lab --no-browser --ip=127.0.0.1 --port=8888`  
-Laptop: `ssh -N -L 8888:127.0.0.1:8888 USER@<node> -J USER@izar.hpc.epfl.ch`  
-See README for the full notebook steps.
+Full copy-paste steps: README.
 
 ## Docs
 
