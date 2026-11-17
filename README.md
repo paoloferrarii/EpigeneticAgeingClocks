@@ -38,7 +38,33 @@ python 01_data_download/select_datasets.py --force-refresh
 python 01_data_download/geo_data_download.py --selected-only
 ```
 
-Then `01_data_download/normalise_data_candidates.ipynb` (still on compute, not login).
+## Jupyter (compute node, not login)
+
+`build` QoS ≈ **1 job/user**. If `sbatch` is already running, `Sinteract -q build` fails with `QOSMaxSubmitJobPerUserLimit` — wait, `scancel <JOBID>`, or use `debug`:
+
+```bash
+Sinteract -p gpu -q debug -g gpu:1 -c 4 -m 16G -t 01:00:00
+# or, when no other build job: Sinteract -p gpu -q build -c 4 -m 16G -t 02:00:00
+```
+
+On the compute host (not `izar1`):
+
+```bash
+cd /work/scitas-share/FellayMultiOmic/CS433/ML4Science_Barry
+conda activate MLproject1
+hostname   # e.g. i31
+jupyter lab --no-browser --ip=127.0.0.1 --port=8888
+```
+
+Laptop tunnel (replace `USER` / `i31`):
+
+```bash
+ssh -N -L 8888:127.0.0.1:8888 USER@i31 -J USER@izar.hpc.epfl.ch
+```
+
+Browser: `http://127.0.0.1:8888/lab?token=...` → open `01_data_download/normalise_data_candidates.ipynb`.
+
+Jed/Kuma interactive flags: [jed.md](docs/scitas/jed.md) · [kuma.md](docs/scitas/kuma.md).
 
 Config: `shared/paths.py` · Cache: `data/selection/selection_cache.json`  
 Overview: n>100, clinical outcome, 450K/EPIC. Beta checked at download.

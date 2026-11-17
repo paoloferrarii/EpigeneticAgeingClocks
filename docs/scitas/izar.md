@@ -26,18 +26,18 @@ Script uses: `--partition=gpu --qos=build`
 sbatch --partition=gpu --qos=normal --gres=gpu:1 --time=04:00:00 your_gpu_job.sbatch
 ```
 
-## Interactive
+## Interactive / Jupyter
 
-```bash
-Sinteract -p gpu -q build -c 4 -m 16G -t 02:00:00
-cd /work/scitas-share/FellayMultiOmic/CS433/ML4Science_Barry
-```
-
-With a GPU:
+`build` ≈ 1 job/user. If a download `sbatch` is running, interactive `-q build` hits `QOSMaxSubmitJobPerUserLimit` — wait, `scancel`, or use `debug`:
 
 ```bash
 Sinteract -p gpu -q debug -g gpu:1 -c 4 -m 16G -t 01:00:00
+# or when free: Sinteract -p gpu -q build -c 4 -m 16G -t 02:00:00
 ```
+
+Then on the compute host: `jupyter lab --no-browser --ip=127.0.0.1 --port=8888`  
+Laptop: `ssh -N -L 8888:127.0.0.1:8888 USER@<node> -J USER@izar.hpc.epfl.ch`  
+See README for the full notebook steps.
 
 ## Docs
 
