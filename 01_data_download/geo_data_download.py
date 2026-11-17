@@ -9,9 +9,15 @@ Generalized from a notebook originally written for GSE40279.
 
 Usage:
     python geo_data_download.py
+    python geo_data_download.py --gse GSE87571 GSE111629
+    python geo_data_download.py --selected-only          # after select_datasets.py
+    python geo_data_download.py --selected-only --require-age  # Overview PASS + age
 
-Just edit the GSE_LIST below (and RAW_DIR / PROCESSED_DIR if needed) and run.
+The controlled catalog lives in shared/paths.py (keep ALL working + candidate GSEs).
+Run select_datasets.py to decide which pass Overview prerequisites — do not shrink
+GSE_LIST by hand for that.
 """
+import argparse
 import re
 import gzip
 import pickle
@@ -32,26 +38,12 @@ from urllib3.util.retry import Retry
 # CONFIG
 # --------------------------------------------------------------------------
 
-# Prefer shared project paths; fall back to the original EpiHydra layout.
+# Prefer shared project paths (local data/ tree — Barry: download yourselves).
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-try:
-    from shared.paths import GSE_LIST, PROCESSED_DIR, RAW_DIR
-except ImportError:  # pragma: no cover - standalone fallback
-    GSE_LIST = [
-        "GSE41037",
-        "GSE40279",
-        "GSE42861",
-        "GSE27097",
-        "GSE84727",
-        "GSE111629",
-        "GSE157131",
-        "GSE197674",
-    ]
-    RAW_DIR = Path("/work/gr-fe/bryan/EpiHydra/data/01_raw")
-    PROCESSED_DIR = Path("/work/gr-fe/bryan/EpiHydra/data/02_processed")
+from shared.paths import GSE_LIST, PROCESSED_DIR, RAW_DIR
 
 # Network resilience: NCBI's FTP-over-HTTPS endpoint occasionally drops the
 # TLS handshake (SSLEOFError) or resets connections. These settings retry
@@ -104,9 +96,11 @@ def curl_download(url: str, filepath: Path) -> None:
     if tmp_path.exists():
         tmp_path.unlink()
 
+    # NCBI intermittently 403s default/libcurl user-agents; use a browser UA.
     cmd = [
         "curl",
         "-fL",
+        "-A", "Mozilla/5.0 (compatible; EpigeneticAgeingClocks/1.0)",
         "--retry", "5",
         "--retry-delay", "5",
         "--retry-connrefused",
@@ -137,12 +131,19 @@ def curl_download(url: str, filepath: Path) -> None:
             tmp_path.unlink()
         raise
 
-def download_series_matrix(gse: str, filepath: Path) -> None:
-    """Download the GEO series matrix, skipping existing files."""
+def download_series_matrix(
+    gse: str,
+    filepath: Path,
+    force: bool = False,
+) -> None:
+    """Download the GEO series matrix, skipping existing files unless force."""
 
-    if filepath.exists() and filepath.stat().st_size > 0:
+    if filepath.exists() and filepath.stat().st_size > 0 and not force:
         print(f"{gse}: series matrix already exists, skipping download.")
         return
+
+    if force and filepath.exists():
+        filepath.unlink()
 
     url = series_matrix_url(gse)
 
@@ -308,7 +309,9 @@ def find_supplementary_beta(gse):
 def download_supplementary_beta(gse: str, directory: Path) -> Path:
     """Find and download supplementary beta values."""
 
-    filename, url = find_supplementary_beta(gse)
+    selected = find_supplementary_beta(gse)
+    filename = selected["filename"]
+    url = selected["url"]
 
     filepath = directory / filename
 
@@ -662,11 +665,64 @@ def process_gse(gse: str) -> None:
 # MAIN
 # --------------------------------------------------------------------------
 
-def main():
+def resolve_gse_targets(args: argparse.Namespace) -> list[str]:
+    """Full catalog by default; optional subset or selection-file filter."""
+    if args.selected_only:
+        # Ensures cache exists / is fresh (refreshes from GEO when stale).
+        _here = Path(__file__).resolve().parent
+        if str(_here) not in sys.path:
+            sys.path.insert(0, str(_here))
+        from select_datasets import get_selected_datasets
+
+        return get_selected_datasets(
+            require_age=args.require_age,
+            force_refresh=False,
+            gse_list=args.gse,
+        )
+
+    if args.gse:
+        return list(args.gse)
+    return list(GSE_LIST)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Download and pickle GEO methylation series for the catalog."
+    )
+    parser.add_argument(
+        "--gse",
+        nargs="*",
+        default=None,
+        help="Process only these accessions (default: full shared.paths.GSE_LIST).",
+    )
+    parser.add_argument(
+        "--selected-only",
+        action="store_true",
+        help="Process only GSEs that passed select_datasets.py.",
+    )
+    parser.add_argument(
+        "--require-age",
+        action="store_true",
+        help="With --selected-only, also require chronological age (MAE).",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None):
+    args = parse_args(argv)
+    targets = resolve_gse_targets(args)
+
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+
+    print(f"Processing {len(targets)} dataset(s): {targets}")
+    print(f"RAW_DIR={RAW_DIR}")
+    print(f"PROCESSED_DIR={PROCESSED_DIR}")
+
     succeeded = []
     failed = []
 
-    for gse in GSE_LIST:
+    for gse in targets:
         try:
             process_gse(gse)
             succeeded.append(gse)
