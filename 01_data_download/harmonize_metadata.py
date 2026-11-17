@@ -9,19 +9,16 @@ Per ogni dataset e per ogni attributo definito in ATTRIBUTES:
   3. per gli attributi categorici propone una conversione dei valori
      (es. "F" -> 1, "M" -> 0) e ti chiede conferma o correzione.
 
-Le scelte vengono salvate in CHOICES_FILE: rilanciando lo script non ti
-richiede quello che hai già deciso (usa --redo per rifare).
+Ogni esecuzione è indipendente: nessuna scelta viene ricordata.
 
-Output:
+Output (uno per dataset):
     PROCESSED_DIR/<GSE>/meta_std.csv    -> ID, Dataset + attributi standard
-    PROCESSED_DIR/meta_std_all.csv      -> tutti i dataset in una tabella
 
 Uso:
-    python harmonize_metadata.py                      # tutti i dataset
-    python harmonize_metadata.py GSE42861 GSE40279    # solo alcuni
-    python harmonize_metadata.py --redo GSE42861      # rifà le scelte di un dataset
+    python harmonize_metadata.py GSE42861             # un dataset
+    python harmonize_metadata.py GSE42861 GSE40279    # più dataset, uno dopo l'altro
+    python harmonize_metadata.py                      # tutti quelli in GSE_LIST
 """
-import json
 import pickle
 import re
 import sys
@@ -42,8 +39,6 @@ except ImportError:
         "GSE84727", "GSE111629", "GSE157131", "GSE197674",
     ]
     PROCESSED_DIR = Path("/work/gr-fe/bryan/EpiHydra/data/02_processed")
-
-CHOICES_FILE = PROCESSED_DIR / "harmonization_choices.json"
 
 # --------------------------------------------------------------------------
 # ATTRIBUTI STANDARD
@@ -120,16 +115,6 @@ def load_meta(gse: str) -> pd.DataFrame:
     return pd.read_csv(csv_path, dtype=str, keep_default_na=False)
 
 
-def load_choices() -> dict:
-    if CHOICES_FILE.exists():
-        return json.loads(CHOICES_FILE.read_text())
-    return {}
-
-
-def save_choices(choices: dict) -> None:
-    CHOICES_FILE.write_text(json.dumps(choices, indent=2, ensure_ascii=False))
-
-
 # --------------------------------------------------------------------------
 # INTERAZIONE
 # --------------------------------------------------------------------------
@@ -137,7 +122,7 @@ def ask(prompt: str) -> str:
     try:
         return input(prompt).strip()
     except EOFError:
-        sys.exit("\nInput terminato: le scelte fatte finora sono salvate.")
+        sys.exit("\nInput terminato: il dataset in corso non è stato salvato.")
 
 
 def describe_column(meta: pd.DataFrame, col: str) -> str:
@@ -278,26 +263,21 @@ def convert(meta: pd.DataFrame, attr: str, choice: dict) -> pd.Series:
 # --------------------------------------------------------------------------
 # PIPELINE
 # --------------------------------------------------------------------------
-def harmonize_dataset(gse: str, choices: dict, redo: bool) -> pd.DataFrame:
+def harmonize_dataset(gse: str) -> pd.DataFrame:
     meta = load_meta(gse)
     print(f"\n{'=' * 70}\n{gse}: {len(meta)} campioni, {len(meta.columns)} colonne\n{'=' * 70}")
 
-    ds_choices = {} if redo else choices.get(gse, {})
+    choices = {}
     for attr, spec in ATTRIBUTES.items():
-        if attr in ds_choices:
-            print(f"  [{attr}] già deciso: colonna = {ds_choices[attr].get('column')}")
-            continue
         col = choose_column(meta, attr, spec["patterns"])
         choice = {"column": col}
         if col is not None and spec["type"] == "categorical":
             choice["value_map"] = build_value_map(meta, col, attr, spec)
-        ds_choices[attr] = choice
-        choices[gse] = ds_choices
-        save_choices(choices)          # salva subito: se interrompi non perdi nulla
+        choices[attr] = choice
 
     std = pd.DataFrame({"ID": meta["ID"], "Dataset": gse})
     for attr in ATTRIBUTES:
-        std[attr] = convert(meta, attr, ds_choices[attr]).values
+        std[attr] = convert(meta, attr, choices[attr]).values
 
     out = PROCESSED_DIR / gse / "meta_std.csv"
     std.to_csv(out, index=False)
@@ -307,33 +287,12 @@ def harmonize_dataset(gse: str, choices: dict, redo: bool) -> pd.DataFrame:
 
 
 def main(argv: list) -> None:
-    redo = "--redo" in argv
     selected = [a for a in argv if a.startswith("GSE")] or GSE_LIST
-    choices = load_choices()
-    if redo:
-        for gse in selected:
-            choices.pop(gse, None)
-
-    tables = []
     for gse in selected:
         try:
-            tables.append(harmonize_dataset(gse, choices, redo=False))
+            harmonize_dataset(gse)
         except FileNotFoundError as e:
             print(f"\n{gse}: file non trovato ({e}), salto.")
-
-    # Tabella unica con tutti i dataset già armonizzati (anche da run precedenti)
-    all_tables = []
-    for gse in GSE_LIST:
-        path = PROCESSED_DIR / gse / "meta_std.csv"
-        if path.exists():
-            all_tables.append(pd.read_csv(path))
-    if all_tables:
-        combined = pd.concat(all_tables, ignore_index=True)
-        out = PROCESSED_DIR / "meta_std_all.csv"
-        combined.to_csv(out, index=False)
-        print(f"\nTabella unica: {combined.shape[0]} campioni da "
-              f"{combined['Dataset'].nunique()} dataset -> {out}")
-    print(f"Scelte salvate in {CHOICES_FILE}")
 
 
 if __name__ == "__main__":
