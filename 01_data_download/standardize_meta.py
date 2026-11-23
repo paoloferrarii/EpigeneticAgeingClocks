@@ -5,7 +5,12 @@ standardize_meta.py
 Carica i pickle prodotti da standardize_cpg.py (OUT_DIR/<GSE>/methylation.pkl).
 Per ogni attributo in ATTRIBUTES cerca le colonne dei metadati con i suoi regex,
 le stampa con alcuni esempi e chiede da terminale il numero della colonna giusta.
-Le colonne scelte sostituiscono "meta" nel pickle e vengono salvate come "std_meta".
+Poi stampa i valori della colonna originale e, sotto, i valori standard numerati
+(STANDARD_VALUES): da terminale si scrive un numero per ogni valore originale, nello
+stesso ordine. Gli attributi numerici (NUMERIC) vengono solo convertiti in numero.
+Le colonne scelte vengono salvate nel pickle come "std_meta", con il nome standard
+dell'attributo; "meta" resta invariato. I dataset che hanno già "std_meta" vengono
+saltati (vedi OVERWRITE), quindi lo script si può interrompere e rilanciare.
 """
 import pickle
 import re
@@ -25,6 +30,7 @@ GSE_LIST = [
     "GSE84727", "GSE111629", "GSE157131", "GSE197674",
 ]
 
+OVERWRITE = False   # True = rifà la scelta anche per i dataset che hanno già std_meta
 N_EXAMPLES = 5   # valori di esempio stampati per ogni colonna
 
 # attributo standard : regex da cercare nei nomi delle colonne
@@ -35,6 +41,18 @@ ATTRIBUTES = {
     "smoking":   [r"smok", r"tobacco"],
     "ethnicity": [r"race", r"ethnic", r"ancestr"],
     "tissue":    [r"tissue", r"cell.?type", r"source"],
+}
+
+NUMERIC = ["age"]   # attributi da convertire in numero, senza valori standard
+
+# attributo standard : valori ammessi (0 da terminale = valore mancante)
+STANDARD_VALUES = {
+    "sex":       ["male", "female"],
+    "disease":   ["control", "schizophrenia", "rheumatoid arthritis",
+                  "parkinson", "cancer", "hypertension", "other"],
+    "smoking":   ["never", "former", "current", "occasional"],
+    "ethnicity": ["european", "african", "asian", "hispanic", "other"],
+    "tissue":    ["whole blood", "pbmc", "leukocytes", "other"],
 }
 
 
@@ -63,6 +81,47 @@ def ask_column(columns: list):
         print("  Numero non valido.")
 
 
+def ask_values(values: list, standard: list) -> dict:
+    """Stampa valori originali e standard, chiede un numero per valore. 0 = mancante."""
+    print("  Valori originali (in ordine):")
+    for i, value in enumerate(values, 1):
+        print(f"    {i}. {value!r}")
+    print("  Valori standard:")
+    print("    0) mancante")
+    for i, name in enumerate(standard, 1):
+        print(f"    {i}) {name}")
+    while True:
+        answer = input(f"  Scrivi {len(values)} numeri [0-{len(standard)}] separati da spazio, "
+                       "uno per valore originale: ").split()
+        if len(answer) != len(values):
+            print(f"  Servono {len(values)} numeri, ne hai scritti {len(answer)}.")
+            continue
+        if not all(a.isdecimal() and int(a) <= len(standard) for a in answer):
+            print("  Numero non valido.")
+            continue
+        mapping = {v: standard[int(a) - 1] if int(a) else None for v, a in zip(values, answer)}
+        for value, name in mapping.items():
+            print(f"    {value!r} -> {name}")
+        if input("  Confermi? [s/n]: ").strip().lower() == "s":
+            return mapping
+
+
+def standardize_column(column: pd.Series, attr: str) -> list:
+    """Valori standardizzati della colonna scelta, uno per campione."""
+    if attr in NUMERIC:
+        numbers = pd.to_numeric(column, errors="coerce")
+        failed = column[numbers.isna() & column.notna()].unique().tolist()
+        if failed:
+            print(f"  Attenzione, valori non numerici messi a mancante: {failed}")
+        print(f"  Intervallo: {numbers.min()} - {numbers.max()}")
+        return numbers.tolist()
+    values = sorted(column.dropna().unique().tolist())
+    if not values:
+        return [None] * len(column)
+    mapping = ask_values(values, STANDARD_VALUES[attr])
+    return [mapping.get(v) for v in column]
+
+
 # --------------------------------------------------------------------------
 # MAIN
 # --------------------------------------------------------------------------
@@ -71,6 +130,12 @@ def main():
         path = STD_DIR / gse / PICKLE_NAME
         with open(path, "rb") as f:
             data = pickle.load(f)
+        if "std_meta" in data and not OVERWRITE:
+            print(f"{gse}: std_meta già presente, salto")
+            continue
+        if "meta" not in data:
+            print(f"{gse}: meta grezzo assente, rilancia standardize_cpg.py per questo dataset")
+            continue
         meta = data["meta"]
         print(f"\n===== {gse} ({len(meta)} campioni) =====")
 
@@ -84,9 +149,8 @@ def main():
                 continue
             print_columns(meta, columns)
             col = ask_column(columns)
-            std_meta[attr] = meta[col].values if col is not None else None
+            std_meta[attr] = standardize_column(meta[col], attr) if col is not None else None
 
-        del data["meta"]
         data["std_meta"] = std_meta
         with open(path, "wb") as f:
             pickle.dump(data, f)
