@@ -118,6 +118,9 @@ def read_header(path: Path):
             # chip ID, also inside idat file names
             chips = [CHIP_ID.search(v) for v in values]
             labels.append([m.group() if m else "" for m in chips])
+            # ID in square brackets, e.g. "... childhood cancer [SJNHL017924_G1]"
+            brackets = [re.search(r"\[([^\]]+)\]", v) for v in values]
+            labels.append([m.group(1) if m else "" for m in brackets])
     if not gsm:
         raise ValueError(f"no GSM in the header of {path}")
     return lines, gsm, labels
