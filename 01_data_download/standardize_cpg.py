@@ -82,7 +82,14 @@ def remove_below_threshold(cpg: pd.DataFrame, threshold: float) -> pd.DataFrame:
 
 def impute_median(cpg: pd.DataFrame) -> pd.DataFrame:
     """Sostituisce i valori mancanti con la mediana della stessa CpG su tutti i campioni."""
-    return cpg.T.fillna(cpg.median(axis=1)).T
+    values = cpg.to_numpy(dtype=float, copy=True)
+    missing = np.isnan(values)
+    rows = missing.any(axis=1)                   # median only for CpGs with missing values
+    if rows.any():
+        sub = values[rows]
+        medians = np.nanmedian(sub, axis=1)
+        values[rows] = np.where(missing[rows], medians[:, None], sub)
+    return pd.DataFrame(values, index=cpg.index, columns=cpg.columns)
 
 
 # --------------------------------------------------------------------------
